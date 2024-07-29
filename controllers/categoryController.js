@@ -1,7 +1,7 @@
 const slugify = require("slugify");
 const CategoryModel = require("../models/categoryModel");
 const asyncHandler = require("express-async-handler");
-const ApiError = require("../utils/ApiError");
+const ApiError = require("../utils/apiError");
 const SubCategoryModel = require("../models/subCategoryModel");
 
 // الحصول على جميع الفئات مع الباجيناشن
