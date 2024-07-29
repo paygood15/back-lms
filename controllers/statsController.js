@@ -8,7 +8,7 @@ const UserModel = require("../models/userModel");
 const LessonProgressModel = require("../models/lessonProgressModel");
 const StudentExam = require("../models/studentExamModel");
 const asyncHandler = require("express-async-handler");
-const ApiError = require("../utils/ApiError");
+const ApiError = require("../utils/apiError");
 const CouponModel = require("../models/couponModel");
 
 exports.getStatistics = asyncHandler(async (req, res, next) => {
