@@ -197,20 +197,23 @@ exports.getSpecificSubCategory = AsyncHandler(async (req, res, next) => {
     populate: {
       path: "lessons",
       select: "title description",
-      populate: {
-        path: "files",
-        select: "title lesson",
-      },
-
-      populate: {
-        path: "exams",
-        select: "title image lesson duration",
-      },
+      populate: [
+        {
+          path: "exams",
+          select: "title image lesson duration",
+        },
+        {
+          path: "files",
+          select: "title lesson file",
+        },
+      ],
     },
-  });;
+  });
+
   if (!subCategory) {
     return next(new ApiError(`No SubCategory has id : ${id}`, 404));
   }
+
   res.status(200).json({
     success: true,
     data: subCategory,
