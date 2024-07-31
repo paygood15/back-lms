@@ -204,7 +204,7 @@ exports.getSpecificSubCategory = AsyncHandler(async (req, res, next) => {
         },
         {
           path: "files",
-          select: "title lesson file",
+          select: "title lesson",
         },
       ],
     },
