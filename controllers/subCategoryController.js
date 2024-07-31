@@ -191,7 +191,23 @@ exports.getSubcategoryInCategory = AsyncHandler(async (req, res, next) => {
 // @access Public
 exports.getSpecificSubCategory = AsyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const subCategory = await subCategoryModel.findById(id);
+  const subCategory = await subCategoryModel.findById(id).populate({
+    path: "doors",
+    select: "title description",
+    populate: {
+      path: "lessons",
+      select: "title description",
+      populate: {
+        path: "files",
+        select: "title lesson",
+      },
+
+      populate: {
+        path: "exams",
+        select: "title image lesson duration",
+      },
+    },
+  });;
   if (!subCategory) {
     return next(new ApiError(`No SubCategory has id : ${id}`, 404));
   }
