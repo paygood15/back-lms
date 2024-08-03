@@ -90,24 +90,16 @@ exports.startStudentExam = async (req, res) => {
   const studentId = req.user._id;
 
   try {
-    // Retrieve the exam and its questions
     const exam = await Exam.findById(examId).populate("questions");
     if (!exam) {
       return res.status(404).send("Exam not found");
     }
 
-    // Ensure the exam has a duration
-    if (!exam.duration) {
-      return res.status(400).send("Exam duration is required.");
-    }
-
-    // Retrieve the lesson associated with the exam
     const lesson = await Lesson.findOne({ exams: examId }).populate("door");
     if (!lesson) {
       return res.status(404).send("Lesson for this exam not found");
     }
 
-    // Check if the student has access to the lesson
     const studentCourse = await StudentCourseModel.findOne({
       student: studentId,
     })
@@ -136,7 +128,6 @@ exports.startStudentExam = async (req, res) => {
       return res.status(403).send("Student does not have access to this exam");
     }
 
-    // Check if the student already has an ongoing exam
     let studentExam = await StudentExam.findOne({
       exam: examId,
       student: studentId,
@@ -150,12 +141,32 @@ exports.startStudentExam = async (req, res) => {
         finished: false,
         attemptCount: 1,
         startTime: new Date(),
-        endTime: new Date(Date.now() + exam.duration * 60000), // Duration in minutes
+        endTime: new Date(Date.now() + exam.duration * 60000),
+        duration: exam.duration,
+        attemptRecords: [
+          {
+            attemptNumber: 1,
+            score: 0,
+            percentage: 0,
+            startTime: new Date(),
+            endTime: new Date(Date.now() + exam.duration * 60000),
+            duration: exam.duration,
+          },
+        ],
       });
     } else {
-      studentExam.attemptCount += 1; // Increment attempt count
+      studentExam.attemptCount += 1;
+      studentExam.finished = false;
       studentExam.startTime = new Date();
-      studentExam.endTime = new Date(Date.now() + exam.duration * 60000); // Update endTime
+      studentExam.endTime = new Date(Date.now() + exam.duration * 60000);
+      studentExam.attemptRecords.push({
+        attemptNumber: studentExam.attemptCount,
+        score: 0,
+        percentage: 0,
+        startTime: new Date(),
+        endTime: new Date(Date.now() + exam.duration * 60000),
+        duration: exam.duration,
+      });
     }
 
     await studentExam.save();
@@ -182,7 +193,7 @@ exports.answerStudentQuestion = expressAsyncHandler(async (req, res) => {
     }
 
     // Find the exam
-    const exam = await Exam.findById(examId);
+    const exam = await Exam.findById(examId).populate("questions");
     if (!exam) {
       return res.status(404).send("Exam not found");
     }
@@ -241,32 +252,70 @@ exports.answerStudentQuestion = expressAsyncHandler(async (req, res) => {
     // إرسال الامتحان المحدث
     res.send(studentExam);
   } catch (error) {
+    console.error("Error answering question:", error);
     res.status(500).send("Error answering question");
   }
 });
+
 // إنهاء الامتحان من قبل الطالب
 exports.finishStudentExam = async (req, res) => {
   const { examId } = req.params;
   const studentId = req.user._id;
 
   try {
+    // Fetch the student's exam record
     const studentExam = await StudentExam.findOne({
       exam: examId,
       student: studentId,
-    });
+    }).populate("exam"); // Populate the exam details
+
     if (!studentExam) {
       return res.status(404).send("Student exam not found");
     }
 
+    // Check if the exam record has expired
     const now = new Date();
     if (now < studentExam.endTime) {
       studentExam.finished = true;
+
+      // Update the most recent attempt record
+      const latestAttempt =
+        studentExam.attemptRecords[studentExam.attemptRecords.length - 1];
+      latestAttempt.endTime = now;
+      latestAttempt.duration = Math.ceil(
+        (latestAttempt.endTime - latestAttempt.startTime) / 60000
+      ); // Duration in minutes
+
+      // Ensure questions are populated and valid
+      if (studentExam.exam && Array.isArray(studentExam.exam.questions)) {
+        // Update the total score and percentage
+        studentExam.totalScore = studentExam.answers.reduce(
+          (total, ans) => total + ans.score,
+          0
+        );
+        const totalPossibleScore = studentExam.exam.questions.reduce(
+          (sum, q) => sum + (q.score || 0),
+          0
+        );
+        studentExam.percentage = (
+          (studentExam.totalScore / totalPossibleScore) *
+          100
+        ).toFixed(2);
+
+        latestAttempt.score = studentExam.totalScore;
+        latestAttempt.percentage = studentExam.percentage;
+      } else {
+        console.error("Exam questions are missing or invalid");
+        return res.status(500).send("Invalid exam questions data");
+      }
+
       await studentExam.save();
       res.send(studentExam);
     } else {
       res.status(400).send("Exam time has already expired.");
     }
   } catch (error) {
+    console.error("Error finishing student exam:", error);
     res.status(500).send("Error finishing student exam");
   }
 };
@@ -280,7 +329,7 @@ exports.getStudentExamHistory = async (req, res) => {
     const options = {
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
-      populate: { path: "exam", select: "title" },
+      populate: { path: "exam", select: "title duration" }, // تأكد من تضمين مدة الامتحان
     };
 
     const studentExams = await StudentExam.paginate(
@@ -293,14 +342,36 @@ exports.getStudentExamHistory = async (req, res) => {
     const currentPage = studentExams.page;
 
     res.send({
+      exams: studentExams.docs.map((exam) => ({
+        examId: exam.exam._id,
+        title: exam.exam.title,
+        attempts: exam.attemptRecords.map((record) => ({
+          attemptNumber: record.attemptNumber,
+          score: record.score,
+          percentage: record.percentage,
+          startTime: record.startTime,
+          endTime: record.endTime,
+          duration: record.duration,
+          durationPercentage: (
+            (record.duration / (exam.exam.duration || 1)) *
+            100
+          ).toFixed(2), // تجنب القسمة على الصفر
+        })),
+        totalAttempts: exam.attemptRecords.length, // عدد المحاولات لكل امتحان
+        averageScore: (
+          exam.attemptRecords.reduce(
+            (total, record) => total + record.score,
+            0
+          ) / (exam.attemptRecords.length || 1)
+        ).toFixed(2), // متوسط الدرجات
+      })),
       totalExams,
       totalPages,
       currentPage,
-      studentExams: studentExams.docs,
     });
   } catch (error) {
-    console.error("Error fetching student exam history:", error);
-    res.status(500).send("Error fetching student exam history.");
+    console.error("Error retrieving student exam history:", error);
+    res.status(500).send("Error retrieving student exam history");
   }
 };
 // تعديل الامتحان
@@ -389,51 +460,61 @@ exports.deleteQuestion = async (req, res) => {
   }
 };
 
-// الحصول على إحصائيات الامتحانات للطالب
-exports.getStudentExamStatistics = expressAsyncHandler(async (req, res) => {
-  const studentId = req.user.id;
+exports.getStudentExamStatistics = async (req, res) => {
+  const studentId = req.user._id;
 
-  // الحصول على جميع امتحانات الطالب
-  const exams = await StudentExam.find({ student: studentId }).exec();
+  try {
+    // العثور على جميع امتحانات الطالب
+    const studentExams = await StudentExam.find({
+      student: studentId,
+    }).populate("exam");
 
-  if (!exams || exams.length === 0) {
-    return res.status(404).json({ message: "No exams found for this student" });
-  }
+    if (!studentExams.length) {
+      return res
+        .status(404)
+        .json({ message: "No exams found for this student" });
+    }
 
-  // حساب عدد الامتحانات
-  const totalExams = exams.length;
+    // حساب الإحصائيات
+    const totalExams = studentExams.length;
+    const totalAttempts = studentExams.reduce(
+      (acc, exam) => acc + exam.attemptCount,
+      0
+    );
+    const totalFinished = studentExams.filter((exam) => exam.finished).length;
+    const totalScores = studentExams.reduce(
+      (acc, exam) => acc + (exam.totalScore || 0),
+      0
+    );
+    const averageScore = totalAttempts > 0 ? totalScores / totalAttempts : 0;
 
-  // حساب عدد مرات فتح الامتحان
-  const totalAttempts = exams.reduce((acc, exam) => acc + exam.attemptCount, 0);
+    const percentageFinished =
+      totalExams > 0 ? (totalFinished / totalExams) * 100 : 0;
 
-  // حساب عدد مرات إنهاء الامتحان
-  const totalFinished = exams.filter((exam) => exam.finished).length;
+    const averagePercentage =
+      totalAttempts > 0
+        ? studentExams.reduce(
+            (acc, exam) => acc + parseFloat(exam.percentage || 0),
+            0
+          ) / totalAttempts
+        : 0;
 
-  // حساب إجمالي الدرجات
-  const totalScores = exams.reduce((acc, exam) => acc + exam.totalScore, 0);
-
-  // حساب متوسط الدرجات
-  const averageScore = totalExams > 0 ? totalScores / totalExams : 0;
-
-  // حساب النسب المئوية
-  const averagePercentage =
-    exams.reduce((acc, exam) => acc + exam.percentage, 0) / totalExams;
-
-  // حساب النسبة المئوية للامتحانات المنتهية
-  const percentageFinished =
-    totalExams > 0 ? (totalFinished / totalExams) * 100 : 0;
-
-  res.status(200).json({
-    statistics: {
+    res.status(200).json({
       totalExams,
       totalAttempts,
       totalFinished,
       averageScore,
+      percentageFinished,
       averagePercentage,
-      percentageFinished, // إضافة النسبة المئوية للامتحانات المنتهية
-    },
-  });
-});
+    });
+  } catch (error) {
+    console.error("Error fetching student exam statistics:", error);
+    res
+      .status(500)
+      .json({ message: "Error fetching student exam statistics." });
+  }
+};
+
 // الحصول على إحصائيات امتحانات الدرس
 exports.getLessonExamStatistics = expressAsyncHandler(async (req, res) => {
   const lessonId = req.params.lessonId;
@@ -457,20 +538,20 @@ exports.getLessonExamStatistics = expressAsyncHandler(async (req, res) => {
       );
       const totalFinished = studentExams.filter((exam) => exam.finished).length;
       const totalScores = studentExams.reduce(
-        (acc, exam) => acc + exam.totalScore,
+        (acc, exam) => acc + (exam.totalScore || 0),
         0
       );
-      const averageScore = totalExams > 0 ? totalScores / totalExams : 0;
+      const averageScore = totalAttempts > 0 ? totalScores / totalAttempts : 0;
 
-      // حساب النسبة المئوية للامتحانات المنتهية
       const percentageFinished =
         totalExams > 0 ? (totalFinished / totalExams) * 100 : 0;
 
-      // حساب متوسط درجات الطلاب كنسبة مئوية
       const averagePercentage =
-        totalExams > 0
-          ? studentExams.reduce((acc, exam) => acc + exam.percentage, 0) /
-            totalExams
+        totalAttempts > 0
+          ? studentExams.reduce(
+              (acc, exam) => acc + parseFloat(exam.percentage || 0),
+              0
+            ) / totalAttempts
           : 0;
 
       return {
@@ -480,14 +561,15 @@ exports.getLessonExamStatistics = expressAsyncHandler(async (req, res) => {
         totalAttempts,
         totalFinished,
         averageScore,
-        percentageFinished, // إضافة النسبة المئوية للامتحانات المنتهية
-        averagePercentage, // إضافة متوسط درجات الطلاب كنسبة مئوية
+        percentageFinished,
+        averagePercentage,
       };
     })
   );
 
   res.status(200).json({ examStats });
 });
+
 exports.getSingleExam = expressAsyncHandler(async (req, res) => {
   const { examId } = req.params;
   const studentId = req.user._id;
