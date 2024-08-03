@@ -2,7 +2,11 @@ const mongoose = require("mongoose");
 const mongoosePaginate = require("mongoose-paginate-v2");
 
 const studentExamSchema = new mongoose.Schema({
-  exam: { type: mongoose.Schema.Types.ObjectId, ref: "Exam", required: true },
+  exam: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Exam",
+    required: true,
+  },
   student: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
@@ -15,18 +19,72 @@ const studentExamSchema = new mongoose.Schema({
         ref: "Question",
         required: true,
       },
-      answer: { type: String, required: true },
-      score: { type: Number, default: 0 }, // الدرجة التي حصل عليها الطالب للإجابة
+      answer: {
+        type: String,
+        required: true,
+      },
+      score: {
+        type: Number,
+        default: 0,
+      },
     },
   ],
-  totalScore: { type: Number, default: 0 }, // الدرجة الكلية
-  percentage: { type: Number, default: 0 }, // نسبة الدرجة
-  finished: { type: Boolean, default: false },
-  startTime: Date,
-  endTime: Date,
-  attemptCount: { type: Number, default: 1 }, // عدد مرات امتحان الطالب
+  finished: {
+    type: Boolean,
+    default: false,
+  },
+  attemptCount: {
+    type: Number,
+    default: 1,
+  },
+  startTime: {
+    type: Date,
+    required: true,
+  },
+  endTime: {
+    type: Date,
+    required: true,
+  },
+  totalScore: {
+    type: Number,
+    default: 0,
+  },
+  percentage: {
+    type: Number,
+    default: 0,
+  },
+  duration: {
+    type: Number, // duration in minutes
+  },
+  attemptRecords: [
+    {
+      attemptNumber: {
+        type: Number,
+        required: true,
+      },
+      score: {
+        type: Number,
+        default: 0,
+      },
+      percentage: {
+        type: Number,
+        default: 0,
+      },
+      startTime: {
+        type: Date,
+        required: true,
+      },
+      endTime: {
+        type: Date,
+        required: true,
+      },
+      duration: {
+        type: Number, // duration in minutes
+      },
+    },
+  ],
 });
+
 studentExamSchema.plugin(mongoosePaginate);
 
-const StudentExam = mongoose.model("StudentExam", studentExamSchema);
-module.exports = StudentExam;
+module.exports = mongoose.model("StudentExam", studentExamSchema);
