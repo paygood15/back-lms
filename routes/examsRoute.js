@@ -11,7 +11,7 @@ const {
   getLessonExamStatistics,
   uploadExamImage,
   resizeImage,
-  updateExam,
+  updateExam, 
   updateQuestion,
   deleteExam,
   deleteQuestion,
@@ -21,6 +21,9 @@ const authController = require("../controllers/authController");
 
 const router = express.Router();
 
+// المسارات التي لا تحتاج إلى معرف examId
+router.get("/statistics", authController.auth, getStudentExamStatistics);
+
 // Route to create a new exam
 router.post(
   "/create",
@@ -28,7 +31,6 @@ router.post(
   resizeImage,
   authController.auth,
   authController.allowedTo("admin", "manager"),
-
   createExam
 );
 
@@ -42,7 +44,6 @@ router.post(
   resizeImage,
   authController.auth,
   authController.allowedTo("admin", "manager"),
-
   addQuestion
 );
 
@@ -68,15 +69,13 @@ router.post("/:examId/finish", authController.auth, finishStudentExam);
 router.get("/history", authController.auth, getStudentExamHistory);
 router.get("/:examId", authController.auth, getSingleExam);
 
-// Route to get a student's exam statistics
-router.get("/statistics", authController.auth, getStudentExamStatistics);
-
 // Route to get statistics for exams in a lesson
 router.get(
   "/lesson/:lessonId/statistics",
   authController.auth,
   getLessonExamStatistics
 );
+
 // Route to update an existing exam
 router.put(
   "/:examId/update",
@@ -84,7 +83,6 @@ router.put(
   resizeImage,
   authController.auth,
   authController.allowedTo("admin", "manager"),
-
   updateExam
 );
 
@@ -95,7 +93,6 @@ router.put(
   resizeImage,
   authController.auth,
   authController.allowedTo("admin", "manager"),
-
   updateQuestion
 );
 
@@ -112,7 +109,6 @@ router.delete(
   "/:examId/delete-question/:questionId",
   authController.auth,
   authController.allowedTo("admin", "manager"),
-
   deleteQuestion
 );
 
