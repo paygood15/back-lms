@@ -11,11 +11,13 @@ const {
   getLessonExamStatistics,
   uploadExamImage,
   resizeImage,
-  updateExam, 
+  updateExam,
   updateQuestion,
   deleteExam,
   deleteQuestion,
   getSingleExam,
+  getSingleExamAdmin,
+  getSingleQuestionAdmin,
 } = require("../controllers/examsController");
 const authController = require("../controllers/authController");
 
@@ -54,7 +56,21 @@ router.get(
   authController.allowedTo("admin", "manager"),
   getExams
 );
+// Get single exam for admin
+router.get(
+  "/admin/:examId",
+  authController.auth,
+  authController.allowedTo("admin", "manager"),
+  getSingleExamAdmin
+);
 
+// Get single question for admin
+router.get(
+  "/admin/:examId/questions/:questionId",
+  authController.auth,
+  authController.allowedTo("admin", "manager"),
+  getSingleQuestionAdmin
+);
 // Route to answer a question in an exam
 router.post(
   "/:examId/answer-question/:questionId",
@@ -106,7 +122,7 @@ router.delete(
 
 // Route to delete a question from an exam
 router.delete(
-  "/:examId/delete-question/:questionId",
+  "/delete-question/:questionId",
   authController.auth,
   authController.allowedTo("admin", "manager"),
   deleteQuestion
