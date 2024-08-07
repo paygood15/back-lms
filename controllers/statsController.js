@@ -11,6 +11,7 @@ const asyncHandler = require("express-async-handler");
 const ApiError = require("../utils/apiError");
 const CouponModel = require("../models/couponModel");
 
+// دالة لحساب إحصائيات الطلبات
 exports.getStatistics = asyncHandler(async (req, res, next) => {
   const { startDate, endDate } = req.query;
 
@@ -33,41 +34,15 @@ exports.getStatistics = asyncHandler(async (req, res, next) => {
       UserModel.countDocuments(),
     ]);
 
-    // الإحصائيات الخاصة بالطلاب
-    const activeStudents = await UserModel.countDocuments({
-      isDisabled: false,
-    });
-    const completedLessonsCount = await LessonProgressModel.countDocuments({
-      viewedAt: {
-        $gte: new Date(
-          startDate || new Date().setMonth(new Date().getMonth() - 1)
-        ),
-        $lte: new Date(endDate || new Date()),
-      },
-    });
-    const studentExamStats = await StudentExam.aggregate([
-      {
-        $match: {
-          finished: true,
-          startTime: {
-            $gte: new Date(
-              startDate || new Date().setMonth(new Date().getMonth() - 1)
-            ),
-            $lte: new Date(endDate || new Date()),
-          },
-        },
-      },
+    const orderStatusCounts = await OrderModel.aggregate([
       {
         $group: {
-          _id: null,
-          totalExams: { $sum: 1 },
-          averageScore: { $avg: "$totalScore" },
-          averagePercentage: { $avg: "$percentage" },
+          _id: "$status",
+          count: { $sum: 1 },
         },
       },
     ]);
 
-    // تحليل زمني
     const [
       dailyOrders,
       monthlyOrders,
@@ -76,6 +51,14 @@ exports.getStatistics = asyncHandler(async (req, res, next) => {
       monthlyOrderStatus,
       doorPopularity,
       lessonPopularity,
+      subCategoryPopularity, // إضافة هذا السطر
+
+      totalRevenue,
+      totalCoursePrice,
+      dailyUsers,
+      monthlyUsers,
+      yearlyUsers,
+      activeUsers,
     ] = await Promise.all([
       OrderModel.aggregate([
         {
@@ -214,94 +197,143 @@ exports.getStatistics = asyncHandler(async (req, res, next) => {
         },
         { $sort: { progressCount: -1 } },
       ]),
-    ]);
-
-    // إحصاءات الكوبونات
-    const couponStats = await CouponModel.aggregate([
-      {
-        $lookup: {
-          from: "orders",
-          localField: "_id",
-          foreignField: "usedCoupons",
-          as: "orders",
-        },
-      },
-      {
-        $addFields: {
-          usageCount: { $size: "$orders" },
-          totalDiscount: {
-            $sum: "$orders.discountApplied",
+      SubCategoryModel.aggregate([
+        // إضافة هذا الاستعلام
+        {
+          $lookup: {
+            from: "orders",
+            localField: "_id",
+            foreignField: "subCategory",
+            as: "orders",
           },
         },
-      },
-      { $sort: { usageCount: -1 } },
-    ]);
-
-    // أرباح الأدمن
-    const revenueStats = await OrderModel.aggregate([
-      {
-        $match: {
-          status: "approved",
-          createdAt: {
-            $gte: new Date(
-              startDate || new Date().setMonth(new Date().getMonth() - 1)
-            ),
-            $lte: new Date(endDate || new Date()),
+        {
+          $addFields: {
+            orderCount: { $size: "$orders" },
           },
         },
-      },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$amount" },
+        { $sort: { orderCount: -1 } },
+      ]),
+      OrderModel.aggregate([
+        {
+          $match: { status: "approved" },
         },
-      },
-    ]);
-
-    const discountStats = await OrderModel.aggregate([
-      {
-        $match: {
-          status: "approved",
-          createdAt: {
-            $gte: new Date(
-              startDate || new Date().setMonth(new Date().getMonth() - 1)
-            ),
-            $lte: new Date(endDate || new Date()),
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$finalPrice" },
           },
         },
-      },
-      {
-        $lookup: {
-          from: "coupons",
-          localField: "usedCoupons",
-          foreignField: "_id",
-          as: "coupons",
+      ]),
+      OrderModel.aggregate([
+        {
+          $match: { status: "approved" },
         },
-      },
-      {
-        $addFields: {
-          totalDiscount: {
-            $sum: "$coupons.discount",
+        {
+          $lookup: {
+            from: "subcategories",
+            localField: "subCategory",
+            foreignField: "_id",
+            as: "subCategoryDetails",
           },
         },
-      },
-      {
-        $group: {
-          _id: null,
-          totalDiscount: { $sum: "$totalDiscount" },
+        {
+          $unwind: "$subCategoryDetails",
         },
-      },
+        {
+          $group: {
+            _id: null,
+            totalCoursePrice: { $sum: "$subCategoryDetails.price" },
+          },
+        },
+      ]),
+      UserModel.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: new Date(
+                startDate || new Date().setMonth(new Date().getMonth() - 1)
+              ),
+              $lte: new Date(endDate || new Date()),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" },
+            },
+            totalUsers: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+      ]),
+
+      UserModel.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: new Date(startDate || new Date().setHours(0, 0, 0, 0)),
+              $lte: new Date(endDate || new Date()),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            activeUsers: {
+              $sum: { $cond: [{ $eq: ["$isDisabled", false] }, 1, 0] },
+            },
+          },
+        },
+      ]),
+
+      UserModel.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: new Date(
+                startDate || new Date().setMonth(new Date().getMonth() - 1)
+              ),
+              $lte: new Date(endDate || new Date()),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+            totalUsers: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+
+      UserModel.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: new Date(
+                startDate ||
+                  new Date().setFullYear(new Date().getFullYear() - 1)
+              ),
+              $lte: new Date(endDate || new Date()),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y", date: "$createdAt" } },
+            totalUsers: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
     ]);
 
-    const totalRevenue = revenueStats[0]?.totalRevenue || 0;
-    const totalDiscount = discountStats[0]?.totalDiscount || 0;
-    const netRevenue = totalRevenue - totalDiscount;
-
-    // تنظيم الاستجابة
     const response = {
       status: "success",
       data: {
-        // الإحصائيات العامة
         totalCounts: {
           categories: categoryCount,
           doors: doorCount,
@@ -310,33 +342,9 @@ exports.getStatistics = asyncHandler(async (req, res, next) => {
           studentCourses: studentCourseCount,
           subCategories: subCategoryCount,
           users: userCount,
+          activeUsers: activeUsers[0]?.activeUsers || 0,
         },
-        // الإحصائيات الخاصة بالطلاب
-        studentStatistics: {
-          activeStudents,
-          completedLessons: completedLessonsCount,
-          examStats: studentExamStats[0] || {
-            totalExams: 0,
-            averageScore: 0,
-            averagePercentage: 0,
-          },
-        },
-        // النسب المئوية
-        percentages: {
-          categories: (
-            (categoryCount / (categoryCount + doorCount + lessonCount)) *
-            100
-          ).toFixed(2),
-          doors: (
-            (doorCount / (categoryCount + doorCount + lessonCount)) *
-            100
-          ).toFixed(2),
-          lessons: (
-            (lessonCount / (categoryCount + doorCount + lessonCount)) *
-            100
-          ).toFixed(2),
-        },
-        // التحليل الزمني
+        orderStatusCounts,
         timeAnalysis: {
           dailyOrders,
           monthlyOrders,
@@ -344,25 +352,22 @@ exports.getStatistics = asyncHandler(async (req, res, next) => {
           monthlyCompletedLessons,
           monthlyOrderStatus,
         },
-        // تحليل شعبية الأبواب والدروس
         popularityAnalysis: {
-          doorPopularity: {
-            title: "شعبية الأبواب",
-            data: doorPopularity,
+          subCategoryPopularity: {
+            title: "شعبة الكورسات",
+            data: subCategoryPopularity,
           },
-          lessonPopularity: {
-            title: "شعبية الدروس",
-            data: lessonPopularity,
-          },
+          doorPopularity: { title: "شعبية الأبواب", data: doorPopularity },
+          lessonPopularity: { title: "شعبية الدروس", data: lessonPopularity },
         },
-        // إحصاءات الكوبونات والأرباح
-        couponStatistics: {
-          title: "إحصاءات الكوبونات",
-          data: couponStats,
+        revenueAnalysis: {
+          totalRevenue: totalRevenue[0]?.totalRevenue || 0,
+          totalCoursePrice: totalCoursePrice[0]?.totalCoursePrice || 0,
         },
-        revenueStatistics: {
-          title: "أرباح الأدمن",
-          data: netRevenue,
+        userStatistics: {
+          dailyUsers,
+          monthlyUsers,
+          yearlyUsers,
         },
       },
     };
