@@ -21,8 +21,9 @@ const lessonFileSchema = new mongoose.Schema(
 
 // Function to set file URLs
 const setFileUrls = (doc) => {
-  if (doc.file && !doc.file.includes(process.env.BASE_URL)) {
-    doc.file = `${process.env.BASE_URL}/uploads/files/${doc.file}`;
+  const baseUrl = process.env.BASE_URL;
+  if (doc.file && !doc.file.startsWith(baseUrl)) {
+    doc.file = `${baseUrl}/uploads/files/${doc.file}`;
   }
 };
 
