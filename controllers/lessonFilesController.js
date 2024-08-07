@@ -49,7 +49,10 @@ exports.getAllLessonFiles = asyncHandler(async (req, res, next) => {
   const lessonFiles = await LessonFile.find().skip(skip).limit(limit);
 
   lessonFiles.forEach((file) => {
-    file.file = `${process.env.BASE_URL}/uploads/files/${file.file}`;
+    const baseUrl = process.env.BASE_URL;
+    if (file.file && !file.file.startsWith(baseUrl)) {
+      file.file = `${baseUrl}/uploads/files/${file.file}`;
+    }
   });
 
   res.status(200).json({
@@ -58,7 +61,6 @@ exports.getAllLessonFiles = asyncHandler(async (req, res, next) => {
     data: lessonFiles,
   });
 });
-
 // Get a single lesson file
 exports.getLessonFile = asyncHandler(async (req, res, next) => {
   const lessonFile = await LessonFile.findById(req.params.id);
@@ -99,6 +101,7 @@ exports.updateLessonFile = asyncHandler(async (req, res, next) => {
 });
 
 // Delete a lesson file
+
 exports.deleteLessonFile = asyncHandler(async (req, res, next) => {
   const lessonFile = await LessonFile.findByIdAndDelete(req.params.id);
 
@@ -106,8 +109,20 @@ exports.deleteLessonFile = asyncHandler(async (req, res, next) => {
     return next(new ApiError("No lesson file found with that ID", 404));
   }
 
-  const filePath = path.join(__dirname, "../uploads/files", lessonFile.file);
-  fs.unlinkSync(filePath);
+  // Remove the base URL from the file path
+  let filePath = lessonFile.file;
+  const baseUrl = process.env.BASE_URL;
+  if (filePath.startsWith(baseUrl)) {
+    filePath = filePath.replace(`${baseUrl}/uploads/files/`, "");
+  }
+  filePath = path.join(__dirname, "../uploads/files", filePath);
+
+  // Delete the file from the filesystem
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    return next(new ApiError(`Failed to delete file: ${error.message}`, 500));
+  }
 
   res.status(204).json({
     status: "success",
