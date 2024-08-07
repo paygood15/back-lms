@@ -55,7 +55,6 @@ exports.getExams = async (req, res) => {
 };
 
 // إضافة سؤال إلى امتحان من قبل المشرف
-// إضافة سؤال إلى امتحان من قبل المشرف
 exports.addQuestion = async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.examId);
@@ -437,25 +436,38 @@ exports.deleteExam = async (req, res) => {
 };
 // حذف سؤال من امتحان
 exports.deleteQuestion = async (req, res) => {
-  const { examId, questionId } = req.params;
+  const { questionId } = req.params;
 
   try {
-    const exam = await Exam.findById(examId);
+    // ابحث عن جميع الامتحانات التي تحتوي على السؤال
+    const exams = await Exam.find({ "questions._id": questionId });
 
-    if (!exam) {
-      return res.status(404).send("Exam not found");
+    if (!exams.length) {
+      return res.status(404).send("Question not found in any exam");
     }
 
-    const question = exam.questions.id(questionId);
-    if (!question) {
-      return res.status(404).send("Question not found");
+    // قم بإزالة السؤال من كل امتحان
+    for (const exam of exams) {
+      const questionIndex = exam.questions.findIndex(
+        (q) => q._id.toString() === questionId
+      );
+
+      if (questionIndex !== -1) {
+        // إزالة السؤال من الأسئلة
+        exam.questions.splice(questionIndex, 1);
+
+        // تحديث الامتحان بدون التحقق من الصحة
+        await Exam.updateOne(
+          { _id: exam._id },
+          { $pull: { questions: { _id: questionId } } },
+          { runValidators: false }
+        );
+      }
     }
 
-    question.remove();
-    await exam.save();
-
-    res.send({ message: "Question deleted successfully" });
+    res.send({ message: "Question deleted successfully from all exams" });
   } catch (error) {
+    console.error("Error deleting question:", error);
     res.status(400).send("Error deleting question");
   }
 };
@@ -660,5 +672,42 @@ exports.getSingleExam = expressAsyncHandler(async (req, res) => {
   } catch (error) {
     console.error("Error retrieving exam:", error);
     res.status(500).send("Error retrieving exam");
+  }
+});
+exports.getSingleExamAdmin = expressAsyncHandler(async (req, res) => {
+  const { examId } = req.params;
+
+  try {
+    const exam = await Exam.findById(examId).populate("questions");
+
+    if (!exam) {
+      return res.status(404).send("Exam not found");
+    }
+
+    res.send(exam);
+  } catch (error) {
+    console.error("Error retrieving exam:", error);
+    res.status(500).send("Error retrieving exam");
+  }
+});
+// Get single question without any access check for admin
+exports.getSingleQuestionAdmin = expressAsyncHandler(async (req, res) => {
+  const { examId, questionId } = req.params;
+
+  try {
+    const exam = await Exam.findById(examId);
+    if (!exam) {
+      return res.status(404).send("Exam not found");
+    }
+
+    const question = exam.questions.id(questionId);
+    if (!question) {
+      return res.status(404).send("Question not found");
+    }
+
+    res.send(question);
+  } catch (error) {
+    console.error("Error retrieving question:", error);
+    res.status(500).send("Error retrieving question");
   }
 });
