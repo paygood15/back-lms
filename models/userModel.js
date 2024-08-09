@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema(
     },
     governorate: {
       type: String,
-      required: [true, `governorate is required`],
+      required: [true, `Governorate is required`],
     },
     password: {
       type: String,
@@ -59,9 +59,35 @@ const userSchema = new mongoose.Schema(
         ref: "Coupon",
       },
     ],
+    loginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    logoutAttempts: {
+      type: Number,
+      default: 0,
+    },
+    loginHistory: [
+      {
+        ip: String,
+        country: String,
+        device: String,
+        timestamp: Date,
+      },
+    ],
+    logoutHistory: [
+      {
+        ip: String,
+        country: String,
+        device: String,
+        timestamp: Date,
+      },
+    ],
+    initialLoginIp: String,
   },
   { timestamps: true }
 );
+
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
