@@ -41,21 +41,16 @@ exports.signup = asyncHandler(async (req, res) => {
   res.status(201).json({ data: user, token });
 });
 exports.login = asyncHandler(async (req, res, next) => {
-  // 1. البحث عن المستخدم بناءً على البريد الإلكتروني
   const user = await userModel.findOne({ email: req.body.email });
-
-  // 2. التحقق من وجود المستخدم وتطابق كلمة المرور
   let isCorrectPassword = false;
   if (user) {
     isCorrectPassword = await bcrypt.compare(req.body.password, user.password);
   }
 
-  // 3. التحقق من صحة البريد الإلكتروني وكلمة المرور
   if (!user || !isCorrectPassword) {
     return next(new ApiError("Incorrect email or password", 401));
   }
 
-  // 4. التحقق من حالة الحساب (إذا كان موقوفًا)
   if (user.isDisabled) {
     return next(
       new ApiError(
@@ -65,19 +60,34 @@ exports.login = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // 5. زيادة عدد محاولات تسجيل الدخول
+  const userIp = req.ip;
+  const userDevice = req.headers["user-agent"] || "Unknown Device";
+  const userCountry = req.headers["cf-ipcountry"] || "Unknown Country"; // يمكن تحديث هذا بناءً على آلية الحصول على الدولة
+
+  if (!user.initialLoginIp) {
+    user.initialLoginIp = userIp;
+  } else if (userIp !== user.initialLoginIp) {
+    return next(
+      new ApiError("Login attempt from a new IP. Access denied.", 403)
+    );
+  }
+
   user.loginAttempts += 1;
+  user.loginHistory.push({
+    ip: userIp,
+    country: userCountry,
+    device: userDevice,
+    timestamp: new Date(),
+  });
+
   await user.save();
 
-  // 6. إنشاء توكن JWT
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN,
   });
 
-  // 7. حذف كلمة المرور من الكائن المستخدم قبل إرسال الاستجابة
   delete user._doc.password;
 
-  // 8. إرسال الاستجابة
   res.status(200).json({ data: user, token });
 });
 exports.logout = asyncHandler(async (req, res, next) => {
@@ -90,8 +100,18 @@ exports.logout = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Update logout attempts
+  const userIp = req.ip;
+  const userDevice = req.headers["user-agent"] || "Unknown Device";
+  const userCountry = req.headers["cf-ipcountry"] || "Unknown Country";
+
   user.logoutAttempts += 1;
+  user.logoutHistory.push({
+    ip: userIp,
+    country: userCountry,
+    device: userDevice,
+    timestamp: new Date(),
+  });
+
   await user.save();
 
   res.status(200).json({
@@ -99,6 +119,7 @@ exports.logout = asyncHandler(async (req, res, next) => {
     message: "Logged out successfully",
   });
 });
+
 
 // @desc     Make sure that user is logged in
 exports.auth = asyncHandler(async (req, res, next) => {
