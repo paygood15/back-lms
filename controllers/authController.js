@@ -43,6 +43,7 @@ exports.signup = asyncHandler(async (req, res) => {
 exports.login = asyncHandler(async (req, res, next) => {
   const user = await userModel.findOne({ email: req.body.email });
   let isCorrectPassword = false;
+
   if (user) {
     isCorrectPassword = await bcrypt.compare(req.body.password, user.password);
   }
@@ -62,14 +63,17 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   const userIp = req.ip;
   const userDevice = req.headers["user-agent"] || "Unknown Device";
-  const userCountry = req.headers["cf-ipcountry"] || "Unknown Country"; // يمكن تحديث هذا بناءً على آلية الحصول على الدولة
+  const userCountry = req.headers["cf-ipcountry"] || "Unknown Country";
 
-  if (!user.initialLoginIp) {
-    user.initialLoginIp = userIp;
-  } else if (userIp !== user.initialLoginIp) {
-    return next(
-      new ApiError("Login attempt from a new IP. Access denied.", 403)
-    );
+  // شرط للتحقق من تطابق الـIP فقط إذا كان المستخدم admin
+  if (user.role === "user") {
+    if (!user.initialLoginIp) {
+      user.initialLoginIp = userIp;
+    } else if (userIp !== user.initialLoginIp) {
+      return next(
+        new ApiError("Student login attempt from a new IP. Access denied.", 403)
+      );
+    }
   }
 
   user.loginAttempts += 1;
@@ -90,6 +94,7 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({ data: user, token });
 });
+
 exports.logout = asyncHandler(async (req, res, next) => {
   const user = await userModel.findById(req.user._id);
 
@@ -119,8 +124,6 @@ exports.logout = asyncHandler(async (req, res, next) => {
     message: "Logged out successfully",
   });
 });
-
-
 // @desc     Make sure that user is logged in
 exports.auth = asyncHandler(async (req, res, next) => {
   // 1- Get the token and check if exists
