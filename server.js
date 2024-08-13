@@ -23,7 +23,7 @@ const lessonFilesRoutes = require("./routes/lessonFilesRoutes");
 const couponRoute = require("./routes/couponRoute");
 const sectionRoute = require("./routes/sectionRoute");
 const accessCodeRoutes = require("./routes/accessCodeRoutes");
-
+const landingImageRoutes = require("./routes/landingImageRoutes");
 
 const dbConnection = require("./config/database");
 const ApiError = require("./utils/apiError");
@@ -57,7 +57,7 @@ app.use("/api/v1/lessonFiles", lessonFilesRoutes);
 app.use("/api/v1/coupons", couponRoute);
 app.use("/api/v1/sections", sectionRoute);
 app.use("/api/v1/accessCode", accessCodeRoutes);
-
+app.use("/api/v1/home", landingImageRoutes);
 
 // setInterval(async () => {
 //   await examsController.checkExpiredExams();
