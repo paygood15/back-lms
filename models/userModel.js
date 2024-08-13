@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
+const generateRandomId = () => {
+  return Math.floor(10000000 + Math.random() * 900000); 
+};
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -84,11 +88,21 @@ const userSchema = new mongoose.Schema(
       },
     ],
     initialLoginIp: String,
+    randomId: {
+      type: Number,
+      unique: true,
+      default: generateRandomId,
+    },
   },
   { timestamps: true }
 );
 
 userSchema.pre("save", async function (next) {
+  // If the randomId is not already set, generate a new one
+  if (!this.randomId) {
+    this.randomId = generateRandomId();
+  }
+
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
