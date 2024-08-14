@@ -295,7 +295,7 @@ exports.getAllOrders = expressAsyncHandler(async (req, res) => {
       const student = await UserModel.findById(order.student);
       return {
         ...order.toObject(),
-        student: student ? { name: student.name, email: student.email } : null,
+        student: student ? { name: student.name,randomId: student.randomId , email: student.email } : null,
       };
     })
   );
