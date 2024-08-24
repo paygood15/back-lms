@@ -1,36 +1,50 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-const dbConnection = require("../config/database");
 
+// نموذج لتتبع التسلسل بناءً على المحافظة
+const sequenceSchema = new mongoose.Schema({
+  governorate: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  currentNumber: {
+    type: Number,
+    default: 0,
+  },
+});
+
+const SequenceModel = mongoose.model("Sequence", sequenceSchema);
+
+// دالة لتوليد randomId بناءً على التسلسل في المحافظة
 const generateRandomId = async (governorate) => {
   if (!governorate) {
     throw new Error("Governorate is not defined");
   }
 
   const governorateInitials = governorate.slice(0, 3).toUpperCase();
-  let digits = 3;
-  let randomId;
 
-  while (true) {
-    // توليد randomId باستخدام عدد الأرقام الحالي
-    randomId =
-      governorateInitials +
-      Math.floor(
-        Math.pow(10, digits - 1) + Math.random() * 9 * Math.pow(10, digits - 1)
-      );
+  // ابحث عن الرقم التسلسلي الحالي أو قم بإنشائه إذا لم يكن موجودًا
+  let sequence = await SequenceModel.findOne({ governorate });
 
-    // تحقق إذا كان randomId موجود بالفعل
-    const existingUser = await UserModel.findOne({ randomId });
-    if (!existingUser) {
-      // إذا لم يكن موجودًا، ارجعه
-      return randomId;
-    }
-
-    // زيادة عدد الأرقام إذا كان randomId موجود بالفعل
-    digits++;
+  if (!sequence) {
+    sequence = await SequenceModel.create({ governorate });
   }
+
+  // زيادة الرقم التسلسلي
+  sequence.currentNumber += 1;
+  await sequence.save();
+
+  // توليد randomId باستخدام الرقم التسلسلي الحالي
+  const digits = 2; // عدد الأرقام التسلسلية
+  const randomId =
+    governorateInitials +
+    sequence.currentNumber.toString().padStart(digits, "0");
+
+  return randomId;
 };
 
+// نموذج المستخدم
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -124,17 +138,21 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Middleware لتوليد randomId قبل حفظ المستخدم
 userSchema.pre("save", async function (next) {
-  // If the randomId is not already set, generate a new one based on governorate
+  // إذا لم يكن randomId موجودًا، قم بإنشائه استنادًا إلى المحافظة
   if (!this.randomId) {
     this.randomId = await generateRandomId(this.governorate);
   }
 
+  // إذا لم يتم تعديل كلمة المرور، تخطى عملية التشفير
   if (!this.isModified("password")) return next();
+
+  // تشفير كلمة المرور
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
+
 const UserModel = mongoose.model("User", userSchema);
 
 module.exports = UserModel;
-
