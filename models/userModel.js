@@ -1,8 +1,34 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const dbConnection = require("../config/database");
 
-const generateRandomId = () => {
-  return Math.floor(10000000 + Math.random() * 900000); 
+const generateRandomId = async (governorate) => {
+  if (!governorate) {
+    throw new Error("Governorate is not defined");
+  }
+
+  const governorateInitials = governorate.slice(0, 3).toUpperCase();
+  let digits = 3;
+  let randomId;
+
+  while (true) {
+    // توليد randomId باستخدام عدد الأرقام الحالي
+    randomId =
+      governorateInitials +
+      Math.floor(
+        Math.pow(10, digits - 1) + Math.random() * 9 * Math.pow(10, digits - 1)
+      );
+
+    // تحقق إذا كان randomId موجود بالفعل
+    const existingUser = await UserModel.findOne({ randomId });
+    if (!existingUser) {
+      // إذا لم يكن موجودًا، ارجعه
+      return randomId;
+    }
+
+    // زيادة عدد الأرقام إذا كان randomId موجود بالفعل
+    digits++;
+  }
 };
 
 const userSchema = new mongoose.Schema(
@@ -89,25 +115,26 @@ const userSchema = new mongoose.Schema(
     ],
     initialLoginIp: String,
     randomId: {
-      type: Number,
+      type: String,
       unique: true,
-      default: generateRandomId,
+      default: null,
     },
+    deviceFingerprint: { type: String, default: null },
   },
   { timestamps: true }
 );
 
 userSchema.pre("save", async function (next) {
-  // If the randomId is not already set, generate a new one
+  // If the randomId is not already set, generate a new one based on governorate
   if (!this.randomId) {
-    this.randomId = generateRandomId();
+    this.randomId = await generateRandomId(this.governorate);
   }
 
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
-
 const UserModel = mongoose.model("User", userSchema);
 
 module.exports = UserModel;
+
