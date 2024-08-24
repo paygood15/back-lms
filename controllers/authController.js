@@ -42,13 +42,7 @@ exports.signup = asyncHandler(async (req, res) => {
 });
 exports.login = asyncHandler(async (req, res, next) => {
   const user = await userModel.findOne({ email: req.body.email });
-  let isCorrectPassword = false;
-
-  if (user) {
-    isCorrectPassword = await bcrypt.compare(req.body.password, user.password);
-  }
-
-  if (!user || !isCorrectPassword) {
+  if (!user || !(await bcrypt.compare(req.body.password, user.password))) {
     return next(new ApiError("Incorrect email or password", 401));
   }
 
@@ -65,15 +59,14 @@ exports.login = asyncHandler(async (req, res, next) => {
   const userDevice = req.headers["user-agent"] || "Unknown Device";
   const userCountry = req.headers["cf-ipcountry"] || "Unknown Country";
 
-  // شرط للتحقق من تطابق الـIP فقط إذا كان المستخدم admin
-  if (user.role === "user") {
-    if (!user.initialLoginIp) {
-      user.initialLoginIp = userIp;
-    } else if (userIp !== user.initialLoginIp) {
-      return next(
-        new ApiError("Student login attempt from a new IP. Access denied.", 403)
-      );
-    }
+  // Check if device fingerprint matches
+  const deviceFingerprint = req.headers["device-fingerprint"];
+  if (user.deviceFingerprint && user.deviceFingerprint !== deviceFingerprint) {
+    return next(new ApiError("Device mismatch. Please contact support.", 403));
+  }
+
+  if (!user.deviceFingerprint) {
+    user.deviceFingerprint = deviceFingerprint;
   }
 
   user.loginAttempts += 1;
@@ -94,10 +87,11 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({ data: user, token });
 });
-
 exports.logout = asyncHandler(async (req, res, next) => {
-  const user = await userModel.findById(req.user._id);
+  console.log(req.user);
+  // console.log(req);
 
+  const user = await userModel.findById(req.user.id);
   if (!user) {
     return res.status(404).json({
       success: false,
