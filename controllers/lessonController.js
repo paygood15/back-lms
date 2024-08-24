@@ -347,3 +347,50 @@ exports.getLessonsInDoor = expressAsyncHandler(async (req, res, next) => {
     },
   });
 });
+exports.getLessonStatistics = expressAsyncHandler(async (req, res, next) => {
+  const { lessonId } = req.params;
+  const page = parseInt(req.query.page, 10) || 1; // رقم الصفحة الحالي
+  const limit = parseInt(req.query.limit, 10) || 10; // عدد العناصر في كل صفحة
+
+  if (page < 1 || limit < 1) {
+    return next(new ApiError("Invalid pagination parameters", 400));
+  }
+
+  // العثور على الدرس
+  const lesson = await lessonModel.findById(lessonId).select("title");
+  if (!lesson) {
+    return next(new ApiError("Lesson not found", 404));
+  }
+
+  // العثور على جميع الطلاب الذين شاهدوا هذا الدرس مع التصفح
+  const totalProgressRecords = await LessonProgressModel.countDocuments({
+    lesson: lessonId,
+  });
+
+  const progressRecords = await LessonProgressModel.find({
+    lesson: lessonId,
+  })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .populate({
+      path: "student",
+      select: "name randomId",
+    });
+
+  // تحويل السجلات إلى شكل مناسب
+  const students = progressRecords.map((record) => ({
+    name: record.student.name,
+    randomId: record.student.randomId,
+  }));
+
+  res.status(200).json({
+    lesson: lesson.title,
+    pagination: {
+      currentPage: page,
+      totalPages: Math.ceil(totalProgressRecords / limit),
+      totalRecords: totalProgressRecords,
+      recordsPerPage: limit,
+    },
+    students,
+  });
+});
