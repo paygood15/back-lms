@@ -42,10 +42,13 @@ exports.signup = asyncHandler(async (req, res) => {
 });
 exports.login = asyncHandler(async (req, res, next) => {
   const user = await userModel.findOne({ email: req.body.email });
+
+  // التحقق من صحة بيانات تسجيل الدخول
   if (!user || !(await bcrypt.compare(req.body.password, user.password))) {
     return next(new ApiError("Incorrect email or password", 401));
   }
 
+  // التحقق من حالة تفعيل الحساب
   if (user.isDisabled) {
     return next(
       new ApiError(
@@ -59,14 +62,20 @@ exports.login = asyncHandler(async (req, res, next) => {
   const userDevice = req.headers["user-agent"] || "Unknown Device";
   const userCountry = req.headers["cf-ipcountry"] || "Unknown Country";
 
-  // Check if device fingerprint matches
+  // التحقق من تطابق بصمة الجهاز
   const deviceFingerprint = req.headers["device-fingerprint"];
   if (user.deviceFingerprint && user.deviceFingerprint !== deviceFingerprint) {
     return next(new ApiError("Device mismatch. Please contact support.", 403));
   }
 
   if (!user.deviceFingerprint) {
+    // تعيين بصمة الجهاز إذا لم تكن موجودة
     user.deviceFingerprint = deviceFingerprint;
+  }
+
+  if (!user.initialLoginIp) {
+    // تعيين عنوان IP الأول إذا لم يكن موجودًا
+    user.initialLoginIp = userIp;
   }
 
   user.loginAttempts += 1;
@@ -79,12 +88,15 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   await user.save();
 
+  // توليد رمز الجلسة (JWT)
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN,
   });
 
+  // إزالة كلمة المرور من النتيجة
   delete user._doc.password;
 
+  // إرسال الاستجابة بنجاح
   res.status(200).json({ data: user, token });
 });
 exports.logout = asyncHandler(async (req, res, next) => {
