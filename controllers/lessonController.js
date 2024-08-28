@@ -377,11 +377,20 @@ exports.getLessonStatistics = expressAsyncHandler(async (req, res, next) => {
       select: "name randomId",
     });
 
-  // تحويل السجلات إلى شكل مناسب
-  const students = progressRecords.map((record) => ({
-    name: record.student.name,
-    randomId: record.student.randomId,
-  }));
+  // استخدام مجموعة Set لتجنب التكرار
+  const seenStudents = new Set();
+  const uniqueStudents = [];
+
+  progressRecords.forEach((record) => {
+    const studentId = record.student._id.toString(); // تحويل إلى نص لضمان التميز
+    if (!seenStudents.has(studentId)) {
+      seenStudents.add(studentId);
+      uniqueStudents.push({
+        name: record.student.name,
+        randomId: record.student.randomId,
+      });
+    }
+  });
 
   res.status(200).json({
     lesson: lesson.title,
@@ -391,6 +400,6 @@ exports.getLessonStatistics = expressAsyncHandler(async (req, res, next) => {
       totalRecords: totalProgressRecords,
       recordsPerPage: limit,
     },
-    students,
+    students: uniqueStudents,
   });
 });
