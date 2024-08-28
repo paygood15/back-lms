@@ -711,3 +711,53 @@ exports.getSingleQuestionAdmin = expressAsyncHandler(async (req, res) => {
     res.status(500).send("Error retrieving question");
   }
 });
+exports.getAllExamsWithStudentAttempts = expressAsyncHandler(
+  async (req, res) => {
+    try {
+      // العثور على جميع الامتحانات
+      const exams = await Exam.find().populate("questions").exec();
+
+      if (!exams || exams.length === 0) {
+        return res.status(404).json({ message: "No exams found" });
+      }
+
+      // جمع معلومات الطلاب الذين قاموا بالامتحانات
+      const examDetails = await Promise.all(
+        exams.map(async (exam) => {
+          const studentAttempts = await StudentExam.find({ exam: exam._id })
+            .populate("student")
+            .exec();
+
+          // تجهيز بيانات المحاولات
+          const attemptsData = studentAttempts.map((attempt) => ({
+            studentId: attempt.student._id,
+            studentName: attempt.student.name, // افترض أن لديك حقل `name` في موديل الطالب
+            attemptCount: attempt.attemptCount,
+            scores: attempt.attemptRecords.map((record) => ({
+              attemptNumber: record.attemptNumber,
+              score: record.score,
+            })),
+          }));
+
+          return {
+            examId: exam._id,
+            title: exam.title,
+            questions: exam.questions.map((question) => ({
+              _id: question._id,
+              text: question.text,
+              image: question.image,
+              options: question.options,
+              score: question.score,
+            })),
+            attempts: attemptsData,
+          };
+        })
+      );
+
+      res.status(200).json(examDetails);
+    } catch (error) {
+      console.error("Error fetching exams with student attempts:", error);
+      res.status(500).send("Error fetching exams with student attempts");
+    }
+  }
+);
