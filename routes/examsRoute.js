@@ -18,6 +18,7 @@ const {
   getSingleExam,
   getSingleExamAdmin,
   getSingleQuestionAdmin,
+  getAllExamsWithStudentAttempts,
 } = require("../controllers/examsController");
 const authController = require("../controllers/authController");
 
@@ -55,6 +56,13 @@ router.get(
   authController.auth,
   authController.allowedTo("admin", "manager"),
   getExams
+);
+// Route to get all exams
+router.get(
+  "/examsData",
+  authController.auth,
+  authController.allowedTo("admin", "manager"),
+  getAllExamsWithStudentAttempts
 );
 // Get single exam for admin
 router.get(
