@@ -731,7 +731,9 @@ exports.getAllExamsWithStudentAttempts = expressAsyncHandler(
           // تجهيز بيانات المحاولات
           const attemptsData = studentAttempts.map((attempt) => ({
             studentId: attempt.student._id,
-            studentName: attempt.student.name, // افترض أن لديك حقل `name` في موديل الطالب
+            studentName: attempt.student.name,
+            randomId: attempt.student.randomId,
+
             attemptCount: attempt.attemptCount,
             scores: attempt.attemptRecords.map((record) => ({
               attemptNumber: record.attemptNumber,
