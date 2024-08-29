@@ -403,3 +403,53 @@ exports.getLessonStatistics = expressAsyncHandler(async (req, res, next) => {
     students: uniqueStudents,
   });
 });
+exports.recordPlaybackEvent = expressAsyncHandler(async (req, res) => {
+  const { studentId, lessonId, eventType, position } = req.body;
+
+  const progress = await LessonProgressModel.findOne({
+    student: studentId,
+    lesson: lessonId,
+  });
+
+  if (!progress) {
+    return res.status(404).json({ message: "Progress record not found" });
+  }
+
+  // Record playback event
+  progress.playbackEvents.push({
+    timestamp: new Date(),
+    type: eventType,
+    position,
+  });
+
+  if (eventType === "play") {
+    progress.videoStartTime = new Date();
+  } else if (eventType === "pause" || eventType === "stop") {
+    progress.videoEndTime = new Date();
+    // Update videoDuration and videoProgress here if needed
+  }
+
+  await progress.save();
+
+  res.status(200).json({ message: "Playback event recorded" });
+});
+exports.updateVideoProgress = expressAsyncHandler(async (req, res) => {
+  const { studentId, lessonId, currentPosition, totalDuration } = req.body;
+
+  const progress = await LessonProgressModel.findOne({
+    student: studentId,
+    lesson: lessonId,
+  });
+
+  if (!progress) {
+    return res.status(404).json({ message: "Progress record not found" });
+  }
+
+  // Calculate percentage of video watched
+  const percentageWatched = (currentPosition / totalDuration) * 100;
+  progress.videoProgress = percentageWatched;
+
+  await progress.save();
+
+  res.status(200).json({ message: "Video progress updated" });
+});
