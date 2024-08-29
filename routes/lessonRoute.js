@@ -9,7 +9,9 @@ const {
   getStudentLessonStatistics,
   getAllStudentLessonStatistics,
   getLessonsInDoor,
-  getLessonStatistics, // أضف هذا السطر
+  getLessonStatistics,
+  recordPlaybackEvent, // Add this line
+  updateVideoProgress, // Add this line
 } = require("../controllers/lessonController");
 const authController = require("../controllers/authController");
 
@@ -33,7 +35,7 @@ router.get(
   "/lesson-statistics/:lessonId",
   authController.auth,
   getLessonStatistics
-); // أضف هذا السطر
+);
 
 router
   .route("/")
@@ -59,5 +61,11 @@ router
     authController.allowedTo("admin", "manager"),
     updateLesson
   );
+
+// Route for recording playback events
+router.post("/record-playback-event", authController.auth, recordPlaybackEvent);
+
+// Route for updating video progress
+router.post("/update-video-progress", authController.auth, updateVideoProgress);
 
 module.exports = router;
