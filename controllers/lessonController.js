@@ -5,6 +5,7 @@ const ApiError = require("../utils/apiError");
 const LessonProgressModel = require("../models/lessonProgressModel");
 const StudentCourseModel = require("../models/StudentCourseModel");
 const DoorModel = require("../models/doorsModel");
+const mongoose = require("mongoose");
 
 exports.getAllLessons = expressAsyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
@@ -382,13 +383,20 @@ exports.getLessonStatistics = expressAsyncHandler(async (req, res, next) => {
   const uniqueStudents = [];
 
   progressRecords.forEach((record) => {
-    const studentId = record.student._id.toString(); // تحويل إلى نص لضمان التميز
-    if (!seenStudents.has(studentId)) {
-      seenStudents.add(studentId);
-      uniqueStudents.push({
-        name: record.student.name,
-        randomId: record.student.randomId,
-      });
+    // تحقق مما إذا كان السجل يحتوي على طالب
+    if (record.student) {
+      const studentId = record.student._id.toString(); // تحويل إلى نص لضمان التميز
+      if (!seenStudents.has(studentId)) {
+        seenStudents.add(studentId);
+        uniqueStudents.push({
+          name: record.student.name,
+          randomId: record.student.randomId,
+          StartTime: record.videoStartTime, // إضافة وقت البدء
+          EndTime: record.videoEndTime, // إضافة وقت التوقف
+          totalTime: record.videoDuration,
+          Progress: record.videoProgress, // إضافة نسبة المشاهدة
+        });
+      }
     }
   });
 
@@ -403,8 +411,16 @@ exports.getLessonStatistics = expressAsyncHandler(async (req, res, next) => {
     students: uniqueStudents,
   });
 });
+
 exports.recordPlaybackEvent = expressAsyncHandler(async (req, res) => {
-  const { studentId, lessonId, eventType, position } = req.body;
+  const studentId = req.user.id;
+  const { lessonId, eventType, position } = req.body;
+
+  // Define fixed event types
+  const validEventTypes = ["play", "pause", "stop"];
+  if (!validEventTypes.includes(eventType)) {
+    return res.status(400).json({ message: "Invalid event type" });
+  }
 
   const progress = await LessonProgressModel.findOne({
     student: studentId,
@@ -415,26 +431,52 @@ exports.recordPlaybackEvent = expressAsyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Progress record not found" });
   }
 
-  // Record playback event
+  const now = new Date();
+  const lastEvent = progress.playbackEvents[progress.playbackEvents.length - 1];
+
+  // Calculate time watched if the previous event was 'play'
+  if (
+    lastEvent &&
+    lastEvent.type === "play" &&
+    (eventType === "pause" || eventType === "stop")
+  ) {
+    const timeWatched = (now - lastEvent.timestamp) / 1000; // Time in seconds
+    progress.totalTimeWatched += timeWatched;
+    progress.videoEndTime = now; // Update end time
+  }
+
+  // Set the video start time only on the first 'play' event
+  if (eventType === "play" && !progress.videoStartTime) {
+    progress.videoStartTime = now;
+  }
+
+  // Check if this event has already been recorded to avoid duplication
+  if (
+    lastEvent &&
+    lastEvent.type === eventType &&
+    lastEvent.position === position
+  ) {
+    return res.status(200).json({ message: "Playback event already recorded" });
+  }
+
+  // Add the playback event
   progress.playbackEvents.push({
-    timestamp: new Date(),
+    timestamp: now,
     type: eventType,
     position,
   });
 
-  if (eventType === "play") {
-    progress.videoStartTime = new Date();
-  } else if (eventType === "pause" || eventType === "stop") {
-    progress.videoEndTime = new Date();
-    // Update videoDuration and videoProgress here if needed
-  }
+  // Recalculate progress percentage
+  progress.calculateProgress();
 
   await progress.save();
 
   res.status(200).json({ message: "Playback event recorded" });
 });
+
 exports.updateVideoProgress = expressAsyncHandler(async (req, res) => {
-  const { studentId, lessonId, currentPosition, totalDuration } = req.body;
+  const studentId = req.user.id;
+  const { lessonId, currentPosition, totalDuration } = req.body;
 
   const progress = await LessonProgressModel.findOne({
     student: studentId,
@@ -445,11 +487,80 @@ exports.updateVideoProgress = expressAsyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Progress record not found" });
   }
 
-  // Calculate percentage of video watched
-  const percentageWatched = (currentPosition / totalDuration) * 100;
-  progress.videoProgress = percentageWatched;
+  // Update total video duration
+  progress.videoDuration = totalDuration;
+
+  // Recalculate progress percentage based on totalTimeWatched
+  progress.calculateProgress();
 
   await progress.save();
 
   res.status(200).json({ message: "Video progress updated" });
 });
+
+exports.getStudentLessonProgress = expressAsyncHandler(
+  async (req, res, next) => {
+    const studentId = req.user.id;
+    const { lessonId } = req.params;
+
+    // Validate IDs
+    if (
+      !mongoose.Types.ObjectId.isValid(studentId) ||
+      !mongoose.Types.ObjectId.isValid(lessonId)
+    ) {
+      return next(new ApiError("Invalid student or lesson ID", 400));
+    }
+
+    // Find the student's lesson progress
+    const progressRecord = await LessonProgressModel.findOne({
+      student: studentId,
+      lesson: lessonId,
+    }).populate({
+      path: "student",
+      select: "name randomId",
+    });
+
+    if (!progressRecord) {
+      return next(new ApiError("Progress record not found", 404));
+    }
+
+    // Calculate total time watched
+    let totalTimeWatched = 0;
+    let lastPlayTime = progressRecord.videoStartTime;
+
+    if (progressRecord.playbackEvents.length > 0) {
+      for (let i = 0; i < progressRecord.playbackEvents.length; i++) {
+        const event = progressRecord.playbackEvents[i];
+        if (event.type === "play") {
+          if (lastPlayTime) {
+            totalTimeWatched += (event.timestamp - lastPlayTime) / 1000; // Convert milliseconds to seconds
+          }
+          lastPlayTime = event.timestamp;
+        } else if (event.type === "stop") {
+          totalTimeWatched += (event.timestamp - lastPlayTime) / 1000; // Convert milliseconds to seconds
+          lastPlayTime = null; // Reset for next session
+        }
+      }
+    }
+
+    // Calculate video progress percentage
+    const progressPercentage =
+      (totalTimeWatched / progressRecord.videoDuration) * 100;
+
+    res.status(200).json({
+      student: {
+        name: progressRecord.student.name,
+        randomId: progressRecord.student.randomId,
+      },
+      lesson: progressRecord.lesson,
+      videoProgress: {
+        startTime: progressRecord.videoStartTime,
+        endTime: progressRecord.videoEndTime,
+        duration: progressRecord.videoDuration,
+        progressPercentage: Math.min(progressPercentage, 100), // Ensure it doesn't exceed 100%
+        totalTimeWatched,
+      },
+      playbackEvents: progressRecord.playbackEvents,
+    });
+  }
+);
